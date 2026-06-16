@@ -604,17 +604,7 @@ void LD2410Component::set_max_distances_timeout() {
   this->set_config_mode_(false);
 }
 
-void LD2410Component::set_gate_threshold(uint8_t gate) {
-  number::Number *motionsens = this->gate_move_threshold_numbers_[gate];
-  number::Number *stillsens = this->gate_still_threshold_numbers_[gate];
-
-  if (!motionsens->has_state() || !stillsens->has_state()) {
-    return;
-  }
-  int motion = static_cast<int>(motionsens->state);
-  int still = static_cast<int>(stillsens->state);
-
-  this->set_config_mode_(true);
+void LD2410Component::set_gate_threshold(const uint8_t gate, const int motion, const int still) {
   // reference
   // https://drive.google.com/drive/folders/1p4dhbEJA3YubyIjIIC7wwVsSo8x29Fq-?spm=a2g0o.detail.1000023.17.93465697yFwVxH
   //   Send data: configure the motion sensitivity of distance gate 3 to 40, and the static sensitivity of 40
@@ -628,10 +618,46 @@ void LD2410Component::set_gate_threshold(uint8_t gate) {
                        0x01, 0x00, lowbyte(motion), highbyte(motion), 0x00, 0x00,
                        0x02, 0x00, lowbyte(still),  highbyte(still),  0x00, 0x00};
   this->send_command_(CMD_GATE_SENS, value, 18);
+}
+
+void LD2410Component::set_gate_threshold(uint8_t gate) {
+  number::Number *motionsens = this->gate_move_threshold_numbers_[gate];
+  number::Number *stillsens = this->gate_still_threshold_numbers_[gate];
+
+  if (!motionsens->has_state() || !stillsens->has_state()) {
+    return;
+  }
+  int motion = static_cast<int>(motionsens->state);
+  int still = static_cast<int>(stillsens->state);
+
+  this->set_config_mode_(true);
+  this->set_gate_threshold(gate, motion, still);
   delay(50);  // NOLINT
   this->query_parameters_();
   this->set_config_mode_(false);
 }
+
+void LD2410Component::set_gate_thresholds() {
+  this->set_config_mode_(true);
+
+  for (int gate = 0; gate < 9; ++gate) {
+    number::Number *motionsens = this->gate_move_threshold_numbers_[gate];
+    number::Number *stillsens = this->gate_still_threshold_numbers_[gate];
+
+    if (!motionsens->has_state() || !stillsens->has_state()) {
+      continue;
+    }
+
+    int motion = static_cast<int>(motionsens->state);
+    int still = static_cast<int>(stillsens->state);
+    this->set_gate_threshold(gate, motion, still);
+  }
+
+  delay(50);  // NOLINT
+  this->query_parameters_();
+  this->set_config_mode_(false);
+}
+
 
 void LD2410Component::set_gate_still_threshold_number(int gate, number::Number *n) {
   this->gate_still_threshold_numbers_[gate] = n;
