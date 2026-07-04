@@ -1,4 +1,5 @@
 #include "ld2410.h"
+#include "esphome/core/version.h"
 
 #include <utility>
 #ifdef USE_NUMBER
@@ -13,6 +14,33 @@
 
 namespace esphome {
 namespace ld2410 {
+
+#if ESPHOME_VERSION_CODE >= VERSION_CODE(2026, 6, 4)
+// Memory-efficient lookup tables
+struct StringToUint8 {
+  const char *str;
+  const uint8_t value;
+};
+
+constexpr StringToUint8 LIGHT_FUNCTIONS_BY_STR[] = {
+    {"off", LIGHT_FUNCTION_OFF},
+    {"below", LIGHT_FUNCTION_BELOW},
+    {"above", LIGHT_FUNCTION_ABOVE},
+};
+constexpr StringToUint8 OUT_PIN_LEVELS_BY_STR[] = {
+    {"low", OUT_PIN_LEVEL_LOW},
+    {"high", OUT_PIN_LEVEL_HIGH},
+};
+
+// Helper functions for lookups
+template<size_t N> uint8_t find_uint8(const StringToUint8 (&arr)[N], const char *str) {
+  for (const auto &entry : arr) {
+    if (strcmp(str, entry.str) == 0)
+      return entry.value;
+  }
+  return 0xFF;  // Not found
+}
+#endif
 
 static const char *const TAG = "ld2410";
 
@@ -95,7 +123,7 @@ void LD2410Component::read_all_info() {
   this->set_config_mode_(false);
 #ifdef USE_SELECT
   const auto baud_rate = std::to_string(this->parent_->get_baud_rate());
-  if (this->baud_rate_select_ != nullptr && this->baud_rate_select_->state != baud_rate) {
+  if (this->baud_rate_select_ != nullptr) {
     this->baud_rate_select_->publish_state(baud_rate);
   }
 #endif
@@ -356,7 +384,12 @@ bool LD2410Component::handle_ack_data_(uint8_t *buffer, int len) {
       ESP_LOGV(TAG, "Handled baud rate change command");
 #ifdef USE_SELECT
       if (this->baud_rate_select_ != nullptr) {
+#if ESPHOME_VERSION_CODE >= VERSION_CODE(2026, 6, 4)
+        auto baud = this->baud_rate_select_->current_option();
+        ESP_LOGE(TAG, "Change baud rate to %.*s and reinstall", (int) baud.size(), baud.c_str());
+#else
         ESP_LOGE(TAG, "Change baud rate component config to %s and reinstall", this->baud_rate_select_->state.c_str());
+#endif
       }
 #endif
       break;
@@ -374,8 +407,7 @@ bool LD2410Component::handle_ack_data_(uint8_t *buffer, int len) {
           DISTANCE_RESOLUTION_INT_TO_ENUM.at(this->two_byte_to_int_(buffer[10], buffer[11]));
       ESP_LOGV(TAG, "Distance resolution is: %s", const_cast<char *>(distance_resolution.c_str()));
 #ifdef USE_SELECT
-      if (this->distance_resolution_select_ != nullptr &&
-          this->distance_resolution_select_->state != distance_resolution) {
+      if (this->distance_resolution_select_ != nullptr) {
         this->distance_resolution_select_->publish_state(distance_resolution);
       }
 #endif
@@ -388,10 +420,10 @@ bool LD2410Component::handle_ack_data_(uint8_t *buffer, int len) {
       ESP_LOGV(TAG, "Light threshold is: %f", this->light_threshold_);
       ESP_LOGV(TAG, "Out pin level is: %s", const_cast<char *>(this->out_pin_level_.c_str()));
 #ifdef USE_SELECT
-      if (this->light_function_select_ != nullptr && this->light_function_select_->state != this->light_function_) {
+      if (this->light_function_select_ != nullptr) {
         this->light_function_select_->publish_state(this->light_function_);
       }
-      if (this->out_pin_level_select_ != nullptr && this->out_pin_level_select_->state != this->out_pin_level_) {
+      if (this->out_pin_level_select_ != nullptr) {
         this->out_pin_level_select_->publish_state(this->out_pin_level_);
       }
 #endif
@@ -676,10 +708,18 @@ void LD2410Component::set_light_out_control() {
 #endif
 #ifdef USE_SELECT
   if (this->light_function_select_ != nullptr && this->light_function_select_->has_state()) {
+#if ESPHOME_VERSION_CODE >= VERSION_CODE(2026, 6, 4)
+    this->light_function_ = find_uint8(LIGHT_FUNCTIONS_BY_STR, this->light_function_select_->current_option().c_str());
+#else
     this->light_function_ = this->light_function_select_->state;
+#endif
   }
   if (this->out_pin_level_select_ != nullptr && this->out_pin_level_select_->has_state()) {
+#if ESPHOME_VERSION_CODE >= VERSION_CODE(2026, 6, 4)
+    this->out_pin_level_ = find_uint8(OUT_PIN_LEVELS_BY_STR, this->out_pin_level_select_->current_option().c_str());
+#else
     this->out_pin_level_ = this->out_pin_level_select_->state;
+#endif
   }
 #endif
   if (this->light_function_.empty() || this->out_pin_level_.empty() || this->light_threshold_ < 0) {
